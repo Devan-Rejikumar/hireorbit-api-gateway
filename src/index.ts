@@ -6,11 +6,13 @@ import cookieParser from "cookie-parser";
 
 
 import {
-  authenticateToken,
-  authorizeRoles,
-  optionalAuth,
-  authenticateAdminToken
-} from "./middleware/auth";
+  authenticateJobseeker,
+  authenticateCompany,
+  authenticateAdmin,
+  authenticateAnyUser,
+  blacklistToken
+} from "./middleware/unifiedAuth";
+
 import { AuthRequest } from "./types/auth";
 import { HttpStatusCode } from "./enums/StatusCodes";
 
@@ -43,7 +45,7 @@ app.use("/api/users/me", async (req: Request, res: Response) => {
   console.log('[Gateway] /me route hit, cookies:', req.cookies);
   
 
-  if (req.cookies.admintoken && !req.cookies.accessToken && !req.cookies.token && !req.cookies.refreshToken) {
+  if (req.cookies.adminAccessToken && !req.cookies.accessToken && !req.cookies.companyAccessToken) {
     try {
       console.log(`[Gateway] Redirecting admin /me to admin route`);
 
@@ -75,7 +77,7 @@ app.use("/api/users/me", async (req: Request, res: Response) => {
   
 
   req.url = "/me"; 
-  return authenticateToken(req as AuthRequest, res, async () => {
+  return authenticateAnyUser(req as AuthRequest, res, async () => {
     try {
       const headers: any = { "Content-Type": "application/json" };
 
@@ -142,8 +144,7 @@ app.use(
     console.log('[Gateway] ADMIN ROUTE HIT:', req.method, req.url);
     next();
   },
-  authenticateAdminToken,
-  authorizeRoles("admin"),
+  authenticateAdmin,
   async (req: AuthRequest, res: Response) => {
     try {
       console.log(
@@ -217,7 +218,7 @@ app.use("/api/users", async (req: Request, res: Response) => {
     }
   }
   
-  return authenticateToken(req as AuthRequest, res, async () => {
+  return authenticateJobseeker(req as AuthRequest, res, async () => {
     try {
       const headers: any = { "Content-Type": "application/json" };
 
@@ -258,7 +259,7 @@ app.use("/api/users", async (req: Request, res: Response) => {
 
 app.use(
   "/api/profile",
-  authenticateToken,
+  authenticateJobseeker,
   async (req: AuthRequest, res: Response) => {
     try {
       console.log(
@@ -300,8 +301,7 @@ app.use(
 );
 
 app.use("/api/company/admin", 
-  authenticateAdminToken,
-  authorizeRoles("admin"),
+  authenticateAdmin,
   async (req: AuthRequest, res: Response) => {
     try {
       console.log(
@@ -341,7 +341,7 @@ app.use("/api/company/admin",
 );
 
 app.use("/api/company", async (req: Request, res: Response) => {
-  const publicCompanyRoutes = ['/login','/register','/generate-otp','/verify-otp','/resend-otp'];
+  const publicCompanyRoutes = ['/login','/register','/generate-otp','/verify-otp','/resend-otp','/logout'];
   if (publicCompanyRoutes.includes(req.url) && req.method === "POST") {
     try {
       console.log(`[Gateway] Forwarding company login to company-service`);
@@ -369,43 +369,43 @@ app.use("/api/company", async (req: Request, res: Response) => {
     }
   }
   
-  return authenticateToken(req as AuthRequest, res, async () => {
-    return authorizeRoles("company")(req as AuthRequest, res, async () => {
-      try {
-        const headers: any = { "Content-Type": "application/json" };
+  
+  return authenticateCompany(req as AuthRequest, res, async () => {
+    try {
+      const headers: any = { "Content-Type": "application/json" };
 
-        if ((req as AuthRequest).user) {
-          headers["x-user-id"] = (req as AuthRequest).user!.id;
-          headers["x-user-email"] = (req as AuthRequest).user!.email;
-          headers["x-user-role"] = (req as AuthRequest).user!.role;
-          headers["x-user-type"] = (req as AuthRequest).user!.userType;
-          if ((req as AuthRequest).user!.companyName) {
-            headers["x-company-name"] = (req as AuthRequest).user!.companyName;
-          }
+      if ((req as AuthRequest).user) {
+        headers["x-user-id"] = (req as AuthRequest).user!.id;
+        headers["x-user-email"] = (req as AuthRequest).user!.email;
+        headers["x-user-role"] = (req as AuthRequest).user!.role;
+        headers["x-user-type"] = (req as AuthRequest).user!.userType;
+        if ((req as AuthRequest).user!.companyName) {
+          headers["x-company-name"] = (req as AuthRequest).user!.companyName;
         }
-
-        const response = await fetch(
-          `http://localhost:3001/api/company${req.url}`,
-          {
-            method: req.method,
-            body: req.body ? JSON.stringify(req.body) : undefined,
-            headers: headers,
-          }
-        );
-
-        const data = await response.json();
-        res.status(response.status).json(data);
-      } catch (error: any) {
-        res
-          .status(HttpStatusCode.INTERNAL_SERVER_ERROR)
-          .json({ error: "Service unavailable" });
-        return; 
       }
-    });
-  });
+
+      const response = await fetch(
+        `http://localhost:3001/api/company${req.url}`,
+        {
+          method: req.method,
+          body: req.body ? JSON.stringify(req.body) : undefined,
+          headers: headers,
+        }
+      );
+
+      const data = await response.json();
+      res.status(response.status).json(data);
+    } catch (error: any) {
+      res
+        .status(HttpStatusCode.INTERNAL_SERVER_ERROR)
+        .json({ error: "Service unavailable" });
+      return; 
+    }
+  }); 
 });
 
-app.use("/api/jobs", optionalAuth, async (req: AuthRequest, res: Response) => {
+
+app.use("/api/jobs", authenticateAnyUser, async (req: AuthRequest, res: Response) => {
   try {
     console.log(
       `[Gateway] Forwarding to job-service: ${req.method} ${req.url}`
@@ -435,6 +435,31 @@ app.use("/api/jobs", optionalAuth, async (req: AuthRequest, res: Response) => {
       .status(HttpStatusCode.INTERNAL_SERVER_ERROR)
       .json({ error: "Service unavailable" });
     return;
+  }
+});
+
+app.post("/api/logout", async (req: AuthRequest, res: Response) => {
+  try {
+    const accessToken = req.cookies.accessToken;
+    const companyAccessToken = req.cookies.companyAccessToken;
+    const adminAccessToken = req.cookies.adminAccessToken;
+    if (accessToken) {
+      blacklistToken(accessToken);
+      res.clearCookie('accessToken');
+      res.clearCookie('refreshToken');
+    } else if (companyAccessToken) {
+      blacklistToken(companyAccessToken);
+      res.clearCookie('companyAccessToken');
+      res.clearCookie('companyRefreshToken');
+    } else if (adminAccessToken) {
+      blacklistToken(adminAccessToken);
+      res.clearCookie('adminAccessToken');
+      res.clearCookie('adminRefreshToken');
+    }
+
+    res.json({ message: "Logged out successfully" });
+  } catch (error: any) {
+    res.status(HttpStatusCode.INTERNAL_SERVER_ERROR).json({ error: "Logout failed" });
   }
 });
 
