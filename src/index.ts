@@ -21,6 +21,7 @@ dotenv.config();
 const app = express();
 
 app.use(express.json());
+app.use(express.raw({ type: 'multipart/form-data', limit: '10mb' }));
 app.use(cookieParser());
 app.use(
   cors({
@@ -138,8 +139,7 @@ app.post("/api/users/admin/login", async (req: Request, res: Response) => {
   }
 });
 
-app.use(
-  "/api/users/admin",
+app.use("/api/users/admin", 
   (req: Request, res: Response, next: NextFunction) => {
     console.log('[Gateway] ADMIN ROUTE HIT:', req.method, req.url);
     next();
@@ -171,7 +171,6 @@ app.use(
       );
 
       const data = await response.json();
-      
       
       const setCookieHeaders = response.headers.getSetCookie();
       if (setCookieHeaders.length > 0) {
@@ -265,10 +264,18 @@ app.use(
       console.log(
         `[Gateway] Forwarding to profile-service: ${req.method} ${req.url}`
       );
+      console.log('🔍 Gateway: Profile route hit');
+    console.log('🔍 Gateway: req.method:', req.method);
+    console.log('🔍 Gateway: req.url:', req.url);
+    console.log('🔍 Gateway: req.headers:', req.headers);
 
       const headers: any = {
         "Content-Type": "application/json",
       };
+
+      if (req.headers['content-type']) {
+      headers['content-type'] = req.headers['content-type'];
+    }
 
       if (req.user) {
         headers["x-user-id"] = req.user.id;
@@ -284,8 +291,10 @@ app.use(
           headers: headers,
         }
       );
+      console.log('🔍 Gateway: User service response status:', response.status);
 
       const data = await response.json();
+      console.log('🔍 Gateway: User service response data:', data);
       res.status(response.status).json(data);
     } catch (error: any) {
       console.log(
@@ -341,7 +350,7 @@ app.use("/api/company/admin",
 );
 
 app.use("/api/company", async (req: Request, res: Response) => {
-  const publicCompanyRoutes = ['/login','/register','/generate-otp','/verify-otp','/resend-otp','/logout'];
+  const publicCompanyRoutes = ['/login','/register','/generate-otp','/verify-otp','/resend-otp','/logout','/refresh-token'];
   if (publicCompanyRoutes.includes(req.url) && req.method === "POST") {
     try {
       console.log(`[Gateway] Forwarding company login to company-service`);
@@ -407,30 +416,43 @@ app.use("/api/company", async (req: Request, res: Response) => {
 
 app.use("/api/jobs", authenticateAnyUser, async (req: AuthRequest, res: Response) => {
   try {
-    console.log(
-      `[Gateway] Forwarding to job-service: ${req.method} ${req.url}`
-    );
+    console.log('🔍 Gateway: Jobs route hit');
+    console.log('🔍 Gateway: req.method:', req.method);
+    console.log('🔍 Gateway: req.url:', req.url);
+    console.log('🔍 Gateway: req.headers:', req.headers);
+    console.log('🔍 Gateway: req.user:', req.user);
 
-    const headers: any = {
-      "Content-Type": "application/json",
-    };
+    const headers: any = {};
+
+    // Forward the original content-type header for multipart data
+    if (req.headers['content-type']) {
+      headers['content-type'] = req.headers['content-type'];
+    }
 
     if (req.user) {
       headers["x-user-id"] = req.user.id;
       headers["x-user-email"] = req.user.email;
       headers["x-user-role"] = req.user.role;
+      console.log('🔍 Gateway: Added user headers:', headers);
     }
 
-    const response = await fetch(`http://localhost:3002/api/jobs${req.url}`, {
+    const jobServiceUrl = `http://localhost:3002/api/jobs${req.url}`;
+    console.log('🔍 Gateway: Forwarding to:', jobServiceUrl);
+    console.log('🔍 Gateway: Content-Type:', req.headers['content-type']);
+
+    const response = await fetch(jobServiceUrl, {
       method: req.method,
-      body: req.body ? JSON.stringify(req.body) : undefined,
+      body: req.body, 
       headers: headers,
     });
 
+    console.log('🔍 Gateway: Job service response status:', response.status);
     const data = await response.json();
+    console.log('🔍 Gateway: Job service response data:', data);
+    
     res.status(response.status).json(data);
   } catch (error: any) {
-    console.log(`[Gateway] Error forwarding to job service:`, error.message);
+    console.error('🔥 Gateway: Error forwarding to job service:', error.message);
     res
       .status(HttpStatusCode.INTERNAL_SERVER_ERROR)
       .json({ error: "Service unavailable" });

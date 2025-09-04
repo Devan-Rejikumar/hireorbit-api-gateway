@@ -1,8 +1,8 @@
+
 import { Request, Response, NextFunction } from "express";
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import { AuthRequest } from "../types/auth";
 import { HttpStatusCode } from "../enums/StatusCodes";
-
 
 interface TokenPayload extends JwtPayload {
     userId?: string;
@@ -15,6 +15,7 @@ interface TokenPayload extends JwtPayload {
 }
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecret';
+const REFRESH_TOKEN_SECRET = process.env.REFRESH_TOKEN_SECRET || 'refresh_secret';
 
 const blacklistedTokens = new Set<string>();
 
@@ -29,7 +30,13 @@ const authenticateWithToken = (tokenCookie: string, expectedRole: string, req: A
         return
     }
     try {
-        const decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
+        let decoded: TokenPayload;
+        try {
+            decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
+        } catch (accessError) {
+            decoded = jwt.verify(token, REFRESH_TOKEN_SECRET) as TokenPayload;
+        }
+        
         if(decoded.role!==expectedRole){
             res.status(HttpStatusCode.FORBIDDEN).json({error:'Invalid role for this endpoint'});
             return;
@@ -44,16 +51,18 @@ const authenticateWithToken = (tokenCookie: string, expectedRole: string, req: A
         next();
     } catch (error: any) {
         res.status(HttpStatusCode.FORBIDDEN).json({ error: "Invalid or expired token" });
-    return;
+        return;
     }
 }
 
 export const authenticateJobseeker = (req: AuthRequest, res: Response, next: NextFunction): void =>{
     authenticateWithToken('accessToken','jobseeker',req,res,next)
 }
+
 export const authenticateCompany = (req: AuthRequest, res: Response, next: NextFunction): void =>{
     authenticateWithToken('companyAccessToken','company',req,res,next);
 }
+
 export const authenticateAdmin = (req: AuthRequest, res: Response, next: NextFunction): void => {
   authenticateWithToken('adminAccessToken', 'admin', req, res, next);
 };
@@ -69,7 +78,15 @@ export const authenticateAnyUser = (req: AuthRequest, res: Response, next: NextF
     const token = req.cookies[cookie];
     if (token && !blacklistedTokens.has(token)) {
       try {
-        const decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
+        // Try to verify with access token secret first
+        let decoded: TokenPayload;
+        try {
+            decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
+        } catch (accessError) {
+            // If access token fails, try refresh token secret
+            decoded = jwt.verify(token, REFRESH_TOKEN_SECRET) as TokenPayload;
+        }
+        
         if (decoded.role === role) {
           req.user = {
             id: decoded.userId || decoded.companyId || '',
