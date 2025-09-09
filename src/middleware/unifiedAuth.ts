@@ -1,8 +1,8 @@
 
-import { Request, Response, NextFunction } from "express";
+import { Request, Response, NextFunction } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
-import { AuthRequest } from "../types/auth";
-import { HttpStatusCode } from "../enums/StatusCodes";
+import { AuthRequest } from '../types/auth';
+import { HttpStatusCode } from '../enums/StatusCodes';
 
 interface TokenPayload extends JwtPayload {
     userId?: string;
@@ -20,48 +20,48 @@ const REFRESH_TOKEN_SECRET = process.env.REFRESH_TOKEN_SECRET || 'refresh_secret
 const blacklistedTokens = new Set<string>();
 
 const authenticateWithToken = (tokenCookie: string, expectedRole: string, req: AuthRequest, res: Response, next: NextFunction):void =>{
-    const token = req.cookies[tokenCookie]
-    if(!token){
-        res.status(HttpStatusCode.UNAUTHORIZED).json({error:'No token provided'});
-        return
-    }
-    if(blacklistedTokens.has(token)){
-        res.status(HttpStatusCode.UNAUTHORIZED).json({error:'Token has been revoked'});
-        return
-    }
+  const token = req.cookies[tokenCookie];
+  if(!token){
+    res.status(HttpStatusCode.UNAUTHORIZED).json({ error:'No token provided' });
+    return;
+  }
+  if(blacklistedTokens.has(token)){
+    res.status(HttpStatusCode.UNAUTHORIZED).json({ error:'Token has been revoked' });
+    return;
+  }
+  try {
+    let decoded: TokenPayload;
     try {
-        let decoded: TokenPayload;
-        try {
-            decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
-        } catch (accessError) {
-            decoded = jwt.verify(token, REFRESH_TOKEN_SECRET) as TokenPayload;
-        }
-        
-        if(decoded.role!==expectedRole){
-            res.status(HttpStatusCode.FORBIDDEN).json({error:'Invalid role for this endpoint'});
-            return;
-        }
-        req.user = {
-            id: decoded.userId || decoded.companyId || '',
-            email: decoded.email,
-            role: decoded.role,
-            userType: decoded.userType || 'individual',
-            companyName: decoded.companyName
-        }
-        next();
-    } catch (error: any) {
-        res.status(HttpStatusCode.FORBIDDEN).json({ error: "Invalid or expired token" });
-        return;
+      decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
+    } catch (accessError) {
+      decoded = jwt.verify(token, REFRESH_TOKEN_SECRET) as TokenPayload;
     }
-}
+        
+    if(decoded.role!==expectedRole){
+      res.status(HttpStatusCode.FORBIDDEN).json({ error:'Invalid role for this endpoint' });
+      return;
+    }
+    req.user = {
+      id: decoded.userId || decoded.companyId || '',
+      email: decoded.email,
+      role: decoded.role,
+      userType: decoded.userType || 'individual',
+      companyName: decoded.companyName,
+    };
+    next();
+  } catch (error) {
+    res.status(HttpStatusCode.FORBIDDEN).json({ error: 'Invalid or expired token' });
+    return;
+  }
+};
 
 export const authenticateJobseeker = (req: AuthRequest, res: Response, next: NextFunction): void =>{
-    authenticateWithToken('accessToken','jobseeker',req,res,next)
-}
+  authenticateWithToken('accessToken','jobseeker',req,res,next);
+};
 
 export const authenticateCompany = (req: AuthRequest, res: Response, next: NextFunction): void =>{
-    authenticateWithToken('companyAccessToken','company',req,res,next);
-}
+  authenticateWithToken('companyAccessToken','company',req,res,next);
+};
 
 export const authenticateAdmin = (req: AuthRequest, res: Response, next: NextFunction): void => {
   authenticateWithToken('adminAccessToken', 'admin', req, res, next);
@@ -71,20 +71,18 @@ export const authenticateAnyUser = (req: AuthRequest, res: Response, next: NextF
   const tokens = [
     { cookie: 'accessToken', role: 'jobseeker' },
     { cookie: 'companyAccessToken', role: 'company' },
-    { cookie: 'adminAccessToken', role: 'admin' }
+    { cookie: 'adminAccessToken', role: 'admin' },
   ];
 
   for (const { cookie, role } of tokens) {
     const token = req.cookies[cookie];
     if (token && !blacklistedTokens.has(token)) {
       try {
-        // Try to verify with access token secret first
         let decoded: TokenPayload;
         try {
-            decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
+          decoded = jwt.verify(token, JWT_SECRET) as TokenPayload;
         } catch (accessError) {
-            // If access token fails, try refresh token secret
-            decoded = jwt.verify(token, REFRESH_TOKEN_SECRET) as TokenPayload;
+          decoded = jwt.verify(token, REFRESH_TOKEN_SECRET) as TokenPayload;
         }
         
         if (decoded.role === role) {
@@ -104,7 +102,7 @@ export const authenticateAnyUser = (req: AuthRequest, res: Response, next: NextF
     }
   }
   
-  res.status(HttpStatusCode.UNAUTHORIZED).json({ error: "No valid token provided" });
+  res.status(HttpStatusCode.UNAUTHORIZED).json({ error: 'No valid token provided' });
 };
 
 export const blacklistToken = (token: string): void => {

@@ -6,28 +6,24 @@ console.log('[Database] Company database URL:', process.env.COMPANY_DATABASE_URL
 export const userDbClient = new PrismaClient({
   datasources: {
     db: {
-      url: process.env.DATABASE_URL
-    }
-  }
+      url: process.env.DATABASE_URL,
+    },
+  },
 });
 
 export const companyDbClient = new PrismaClient({
   datasources: {
     db: {
-      url: process.env.COMPANY_DATABASE_URL
-    }
-  }
+      url: process.env.COMPANY_DATABASE_URL,
+    },
+  },
 });
 
 export const connectDatabases = async () => {
   try {
-    console.log('[Database] Connecting to user database...');
     await userDbClient.$connect();
-    console.log('[Database] Connecting to company database...');
     await companyDbClient.$connect();
-    console.log('✅ Connected to both databases');
   } catch (error) {
-    console.error('❌ Database connection failed:', error);
     process.exit(1);
   }
 };

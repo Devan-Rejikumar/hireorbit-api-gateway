@@ -22,7 +22,6 @@ export interface AuthRequest extends Request {
   }
 }
 
-
 export interface User {
   id: string;
   email: string;
