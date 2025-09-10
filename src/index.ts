@@ -415,9 +415,19 @@ app.use('/api/jobs', authenticateAnyUser, async (req: AuthRequest, res: Response
 
     const jobServiceUrl = `http://localhost:3002/api/jobs${req.url}`;
 
+    // Handle multipart/form-data differently
+    let body;
+    if (req.headers['content-type']?.includes('multipart/form-data')) {
+      // For file uploads, pass the raw body
+      body = (req as any).rawBody || req.body;
+    } else {
+      // For JSON requests, stringify the body
+      body = req.body ? JSON.stringify(req.body) : undefined;
+    }
+
     const response = await fetch(jobServiceUrl, {
       method: req.method,
-      body: req.body ? JSON.stringify(req.body) : undefined, 
+      body: body,
       headers: headers,
     });
     const data = await response.json();
